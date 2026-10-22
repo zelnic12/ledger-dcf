@@ -2,7 +2,7 @@
 
 A discounted cash flow calculator. Type a ticker (or a company name) and it pulls live prices and financial statements from Yahoo Finance, then values the company from its free cash flow.
 
-## Run it
+## Run it locally
 
 Requires Python 3.9+ and nothing else (no packages, no API key).
 
@@ -11,6 +11,22 @@ python server.py
 ```
 
 Then open http://localhost:8765. On Windows you can double-click `start.bat` instead.
+
+## Host it on GitHub Pages
+
+All the data and DCF logic runs in the browser, but Yahoo Finance blocks direct browser requests (no CORS headers). The hosted site therefore fetches through a small relay, `worker/worker.js`, a Cloudflare Worker that only forwards Yahoo Finance URLs. The free Workers plan covers 100,000 requests a day.
+
+1. Deploy the relay (needs a free Cloudflare account):
+   ```bash
+   cd worker
+   npx wrangler login
+   npx wrangler deploy
+   ```
+   It prints a URL like `https://ledger-dcf-relay.<your-subdomain>.workers.dev`.
+2. Put that URL in `RELAY_URL` near the top of the data section of `index.html`, then commit and push.
+3. In the repo's **Settings → Pages**, deploy from the `main` branch, root folder.
+
+When the page runs on `localhost` it uses `server.py`'s built-in `/proxy` route instead, so local use needs no Cloudflare account.
 
 ## What it does
 

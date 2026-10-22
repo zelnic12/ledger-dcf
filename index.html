@@ -694,6 +694,158 @@ function renderSens(m) {
   $("#sensTable").innerHTML = h + "</tbody>";
 }
 
+/* ---------- Data (Yahoo Finance, through a CORS relay) ---------- */
+// Yahoo Finance doesn't allow direct browser requests, so every call goes through a relay:
+// server.py's /proxy when running locally, a Cloudflare Worker (worker.js) when hosted.
+const RELAY_URL = "https://ledger-dcf-relay.YOUR-SUBDOMAIN.workers.dev";
+const LOCAL = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+const RELAY = LOCAL ? "/proxy" : RELAY_URL;
+const YF = "https://query1.finance.yahoo.com";
+
+const _cache = new Map();
+async function yget(path) {
+  const url = YF + path;
+  if (_cache.has(url)) return _cache.get(url);
+  const p = (async () => {
+    let res;
+    try { res = await fetch(RELAY + "?url=" + encodeURIComponent(url)); }
+    catch (e) { throw new Error("Can't reach the data relay. Check your connection, or that the relay in RELAY_URL is deployed."); }
+    if (res.status === 404) throw new Error("Ticker not found.");
+    if (!res.ok) throw new Error(`Yahoo Finance returned ${res.status}. Try again shortly.`);
+    const text = await res.text();
+    try { return JSON.parse(text); }
+    catch (e) { throw new Error("The data relay returned something other than data. Check RELAY_URL in index.html."); }
+  })();
+  _cache.set(url, p);
+  p.catch(() => _cache.delete(url));
+  return p;
+}
+
+async function chart(symbol, range = "5d", interval = "1d") {
+  const d = await yget(`/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`);
+  const r = d?.chart?.result?.[0];
+  if (!r) throw new Error(d?.chart?.error?.description || "Ticker not found.");
+  return r;
+}
+
+const ANNUAL = ["FreeCashFlow", "OperatingCashFlow", "CapitalExpenditure", "TotalRevenue",
+  "NetIncome", "PretaxIncome", "TaxProvision", "InterestExpense"];
+const QUARTERLY = ["TotalDebt", "CashCashEquivalentsAndShortTermInvestments",
+  "OrdinarySharesNumber", "MinorityInterest"];
+
+async function fundamentals(symbol) {
+  const types = ANNUAL.map(t => "annual" + t).concat(QUARTERLY.map(t => "quarterly" + t)).join(",");
+  const now = Math.floor(Date.now() / 1000);
+  const d = await yget(`/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}` +
+    `?type=${types}&period1=${now - 7 * 365 * 86400}&period2=${now + 86400}`);
+  const out = {}; let currency = null;
+  for (const res of d?.timeseries?.result || []) {
+    const key = res.meta.type[0];
+    const rows = (res[key] || []).filter(x => x && x.reportedValue).sort((a, b) => a.asOfDate.localeCompare(b.asOfDate));
+    out[key] = rows.map(x => ({ date: x.asOfDate, value: x.reportedValue.raw }));
+    if (rows.length && !currency) currency = rows[rows.length - 1].currencyCode;
+  }
+  return { fin: out, currency };
+}
+const latest = s => (s && s.length ? s[s.length - 1].value : null);
+
+const BENCHMARKS = {
+  ".T": "^N225", ".L": "^FTSE", ".HK": "^HSI", ".TO": "^GSPTSE", ".DE": "^GDAXI",
+  ".PA": "^FCHI", ".AX": "^AXJO", ".NS": "^NSEI", ".BO": "^BSESN", ".KS": "^KS11",
+  ".TW": "^TWII", ".SS": "000001.SS", ".SZ": "399001.SZ", ".AS": "^AEX",
+  ".SW": "^SSMI", ".MI": "FTSEMIB.MI", ".MC": "^IBEX", ".SI": "^STI", ".SA": "^BVSP",
+};
+const benchmarkFor = s => Object.entries(BENCHMARKS).find(([suf]) => s.endsWith(suf))?.[1] || "^GSPC";
+
+function monthlyReturns(r) {
+  const closes = r.indicators.adjclose?.[0]?.adjclose || r.indicators.quote[0].close;
+  const pts = r.timestamp.map((t, i) => [t, closes[i]]).filter(p => p[1]);
+  const out = {};
+  for (let i = 1; i < pts.length; i++) {
+    out[new Date(pts[i][0] * 1000).toISOString().slice(0, 7)] = pts[i][1] / pts[i - 1][1] - 1;
+  }
+  return out;
+}
+
+// 5-year monthly regression beta against the home-market index.
+async function computeBeta(symbol, benchmark) {
+  try {
+    const [a, b] = await Promise.all([chart(symbol, "5y", "1mo"), chart(benchmark, "5y", "1mo")].map(p => p.then(monthlyReturns)));
+    const keys = Object.keys(a).filter(k => k in b).sort();
+    if (keys.length < 24) return null;
+    const x = keys.map(k => b[k]), y = keys.map(k => a[k]);
+    const mx = x.reduce((s, v) => s + v, 0) / x.length, my = y.reduce((s, v) => s + v, 0) / y.length;
+    let cov = 0, vr = 0;
+    x.forEach((xi, i) => { cov += (xi - mx) * (y[i] - my); vr += (xi - mx) ** 2; });
+    return vr ? cov / vr : null;
+  } catch (e) { return null; }
+}
+
+async function fxRate(src, dst) {
+  if (!src || !dst || src === dst) return 1;
+  try { return (await chart(`${src}${dst}=X`)).meta.regularMarketPrice; } catch (e) { return null; }
+}
+
+async function riskFree() {
+  try { return +((await chart("^TNX")).meta.regularMarketPrice / 100).toFixed(4); } catch (e) { return 0.043; }
+}
+
+async function getCompany(symbol) {
+  const meta = (await chart(symbol)).meta;
+  if (meta.instrumentType && meta.instrumentType !== "EQUITY") {
+    throw new Error(`${symbol} is a ${meta.instrumentType.toLowerCase()}, not a company stock.`);
+  }
+  const benchmark = benchmarkFor(symbol);
+  const [{ fin, currency }, beta, rf] = await Promise.all([fundamentals(symbol), computeBeta(symbol, benchmark), riskFree()]);
+  if (!fin.annualFreeCashFlow?.length && !fin.annualOperatingCashFlow?.length) {
+    throw new Error(`No cash flow statements found for ${symbol}.`);
+  }
+  // London, Johannesburg and Tel Aviv quote in minor units.
+  const minor = { GBp: "GBP", GBX: "GBP", ZAc: "ZAR", ILA: "ILS" };
+  const priceCcy = minor[meta.currency] || meta.currency;
+  const price = meta.regularMarketPrice / (minor[meta.currency] ? 100 : 1);
+
+  let fcf = fin.annualFreeCashFlow || [];
+  if (!fcf.length) {
+    const capex = Object.fromEntries((fin.annualCapitalExpenditure || []).map(r => [r.date, r.value]));
+    fcf = fin.annualOperatingCashFlow.map(r => ({ date: r.date, value: r.value + (capex[r.date] || 0) }));
+  }
+
+  const taxes = Object.fromEntries((fin.annualTaxProvision || []).map(r => [r.date, r.value]));
+  const rates = (fin.annualPretaxIncome || []).filter(r => r.value > 0 && r.date in taxes).map(r => taxes[r.date] / r.value).slice(-3);
+  const taxRate = rates.length ? clamp(rates.reduce((s, v) => s + v, 0) / rates.length, 0, 0.4) : 0.21;
+
+  const debt = latest(fin.quarterlyTotalDebt) || 0;
+  const interest = latest(fin.annualInterestExpense);
+  let kd = interest && debt ? Math.abs(interest) / debt : null;
+  if (kd != null && (kd < 0.005 || kd > 0.15)) kd = null;
+
+  const finCcy = currency || priceCcy;
+  return {
+    symbol,
+    name: meta.longName || meta.shortName || symbol,
+    exchange: meta.fullExchangeName,
+    price, priceCurrency: priceCcy, financialCurrency: finCcy,
+    fxToPrice: await fxRate(finCcy, priceCcy),
+    benchmark,
+    beta: beta != null && isFinite(beta) ? +beta.toFixed(2) : null,
+    taxRate: +taxRate.toFixed(4),
+    costOfDebt: kd != null ? +kd.toFixed(4) : null,
+    totalDebt: debt,
+    cash: latest(fin.quarterlyCashCashEquivalentsAndShortTermInvestments) || 0,
+    minorityInterest: latest(fin.quarterlyMinorityInterest) || 0,
+    shares: latest(fin.quarterlyOrdinarySharesNumber),
+    history: { fcf: fcf.slice(-5), revenue: (fin.annualTotalRevenue || []).slice(-5), netIncome: (fin.annualNetIncome || []).slice(-5) },
+    riskFree: rf,
+  };
+}
+
+async function searchTickers(q) {
+  const d = await yget(`/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=7&newsCount=0`);
+  return (d.quotes || []).filter(x => x.quoteType === "EQUITY")
+    .map(x => ({ symbol: x.symbol, name: x.longname || x.shortname || "", exchange: x.exchDisp || "" }));
+}
+
 /* ---------- Loading ---------- */
 function setStatus(msg, info) {
   const s = $("#status");
@@ -709,9 +861,7 @@ async function load(ticker) {
   $("#app").classList.add("skeleton");
   if ($("#app").hidden) setStatus(`Pulling statements for ${ticker}…`, true);
   try {
-    const res = await fetch("/api/company?ticker=" + encodeURIComponent(ticker));
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Lookup failed.");
+    const data = await getCompany(ticker);
     if (!data.shares || !data.price || !data.history.fcf.length) throw new Error(`${ticker} is missing share count, price or cash flow data, so it can't be valued.`);
     co = data; A = defaults(); baseMode = "latest";
     $("#coName").textContent = co.name;
@@ -720,10 +870,7 @@ async function load(ticker) {
     setStatus(""); $("#app").hidden = false;
     try { localStorage.setItem("dcf-last", ticker); } catch (e) {}
   } catch (e) {
-    const msg = e instanceof TypeError
-      ? "Can't reach the data server. Start it with: python server.py, then open http://localhost:8765."
-      : e.message;
-    setStatus(msg);
+    setStatus(e.message || "Lookup failed.");
   } finally {
     $("#goBtn").disabled = false; $("#goBtn").textContent = "Value it";
     $("#app").classList.remove("skeleton");
@@ -746,8 +893,7 @@ input.addEventListener("input", () => {
   timer = setTimeout(async () => {
     const id = ++reqId;
     try {
-      const r = await fetch("/api/search?q=" + encodeURIComponent(q));
-      const d = await r.json();
+      const d = await searchTickers(q);
       if (id !== reqId || !Array.isArray(d)) return;
       sugg = d; sel = -1; drawSuggest();
     } catch (e) {}
