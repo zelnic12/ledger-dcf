@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ledger DCF</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: a single working column - search bar, verdict strip, then assumptions beside the model. */
+:root {
+  --bg: #efe6d6;          /* beige paper */
+  --surface: #f8f2e7;     /* lighter card beige */
+  --sunken: #e6dac6;
+  --line: #d6c6ab;
+  --ink: #2e2016;         /* espresso */
+  --ink-2: #6b5442;       /* walnut */
+  --ink-3: #9a8168;       /* faded oak */
+  --brown: #7a4e2d;       /* accent saddle brown */
+  --brown-strong: #5c3a20;
+  --on-brown: #f8f2e7;
+  --good: #4f6b3a;
+  --good-bg: #dfe3c8;
+  --bad: #9c3d2a;
+  --bad-bg: #f0d5c8;
+  --mid-bg: #eadbbd;
+  --shadow: 0 1px 2px rgba(60, 40, 20, .06), 0 8px 24px rgba(60, 40, 20, .06);
+  --font-ui: "Manrope", "Segoe UI", system-ui, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --r: 14px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1c1510; --surface: #261c15; --sunken: #2f241b; --line: #3d2f24;
+    --ink: #f0e6d6; --ink-2: #c7b39b; --ink-3: #8f7a65;
+    --brown: #c89466; --brown-strong: #dcab7e; --on-brown: #1c1510;
+    --good: #a9c48c; --good-bg: #2c3322; --bad: #e39a85; --bad-bg: #3d2219; --mid-bg: #3a2d1f;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1c1510; --surface: #261c15; --sunken: #2f241b; --line: #3d2f24;
+  --ink: #f0e6d6; --ink-2: #c7b39b; --ink-3: #8f7a65;
+  --brown: #c89466; --brown-strong: #dcab7e; --on-brown: #1c1510;
+  --good: #a9c48c; --good-bg: #2c3322; --bad: #e39a85; --bad-bg: #3d2219; --mid-bg: #3a2d1f;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 15px/1.5 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+.wrap {
+  max-width: 1180px; margin: 0 auto;
+  padding-block: 28px 64px;
+  padding-left: max(20px, env(safe-area-inset-left, 0px));
+  padding-right: max(20px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 22px;
+}
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+.label {
+  font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3);
+}
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--brown); outline-offset: 2px; }
+
+/* ---------- Top bar ---------- */
+.top { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+.mark {
+  width: 34px; height: 34px; border-radius: 10px; background: var(--brown); color: var(--on-brown);
+  display: grid; place-items: center; font-weight: 800; font-size: 15px; letter-spacing: -.02em;
+}
+.brand h1 { font-size: 19px; font-weight: 800; letter-spacing: -.02em; }
+.brand small { display: block; color: var(--ink-3); font-size: 12px; font-weight: 500; margin-top: -2px; }
+.theme-btn {
+  border: 1px solid var(--line); background: transparent; border-radius: 999px;
+  padding: 7px 12px; font-size: 13px; color: var(--ink-2); cursor: pointer;
+}
+.theme-btn:hover { background: var(--sunken); }
+
+/* ---------- Search ---------- */
+.search { position: relative; }
+.search form {
+  display: flex; gap: 8px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 16px; padding: 7px; box-shadow: var(--shadow);
+}
+.search input {
+  flex: 1; min-width: 0; border: 0; background: transparent; padding: 10px 12px;
+  font-size: 17px; font-weight: 600; letter-spacing: .01em; outline: none;
+}
+.search input::placeholder { color: var(--ink-3); font-weight: 500; }
+.btn {
+  border: 0; border-radius: 11px; background: var(--brown); color: var(--on-brown);
+  padding: 10px 22px; font-weight: 700; cursor: pointer; transition: background .15s;
+}
+.btn:hover { background: var(--brown-strong); }
+.btn:disabled { opacity: .6; cursor: progress; }
+.suggest {
+  position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 6px);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: var(--shadow); padding: 6px; list-style: none; margin: 0;
+}
+.suggest li {
+  display: flex; gap: 12px; align-items: baseline; padding: 9px 12px; border-radius: 9px; cursor: pointer;
+}
+.suggest li[aria-selected="true"], .suggest li:hover { background: var(--sunken); }
+.suggest .sym { font-family: var(--font-num); font-weight: 600; min-width: 84px; }
+.suggest .nm { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.suggest .ex { color: var(--ink-3); font-size: 12px; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+.chip {
+  border: 1px solid var(--line); background: transparent; border-radius: 999px;
+  padding: 5px 12px; font-family: var(--font-num); font-size: 12.5px; color: var(--ink-2); cursor: pointer;
+}
+.chip:hover { background: var(--surface); color: var(--ink); }
+
+/* ---------- Status ---------- */
+.status {
+  border-radius: var(--r); padding: 14px 18px; background: var(--bad-bg); color: var(--bad);
+  font-weight: 600;
+}
+.status.info { background: var(--mid-bg); color: var(--ink-2); }
+
+/* ---------- Verdict ---------- */
+.verdict {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow);
+  padding: 26px 28px; display: grid; gap: 24px;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+}
+.co-name { font-size: 26px; font-weight: 800; letter-spacing: -.025em; line-height: 1.15; }
+.co-meta { color: var(--ink-3); font-size: 13.5px; margin-top: 4px; display: flex; gap: 10px; flex-wrap: wrap; }
+.co-meta .num { color: var(--ink-2); }
+.values { display: flex; gap: 36px; flex-wrap: wrap; margin-top: 22px; align-items: flex-end; }
+.big { font-family: var(--font-num); font-size: 44px; font-weight: 600; letter-spacing: -.03em; line-height: 1; }
+.big.small { font-size: 26px; color: var(--ink-2); }
+.values .label { margin-bottom: 8px; }
+.pill {
+  display: inline-flex; align-items: center; gap: 7px; border-radius: 999px; padding: 6px 13px;
+  font-weight: 700; font-size: 13.5px;
+}
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pill.good { background: var(--good-bg); color: var(--good); }
+.pill.bad { background: var(--bad-bg); color: var(--bad); }
+.pill.mid { background: var(--mid-bg); color: var(--brown); }
+.gauge-box { display: grid; gap: 14px; align-content: center; }
+.gauge { position: relative; height: 54px; }
+.gauge .track { position: absolute; left: 0; right: 0; top: 22px; height: 10px; border-radius: 99px; background: var(--sunken); }
+.gauge .fill { position: absolute; top: 22px; height: 10px; border-radius: 99px; }
+.gauge .tick { position: absolute; top: 14px; width: 2px; height: 26px; border-radius: 2px; transform: translateX(-1px); }
+.gauge .tick span {
+  position: absolute; top: 30px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+  font-size: 11.5px; font-weight: 700; color: var(--ink-2);
+}
+.gauge .tick.price { background: var(--ink); }
+.gauge .tick.iv { background: var(--brown); }
+.gauge .tick.iv span { color: var(--brown); top: -18px; }
+.mos { font-size: 13.5px; color: var(--ink-2); }
+.mos strong { color: var(--ink); }
+
+/* ---------- Main grid ---------- */
+.grid { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 22px; align-items: start; }
+.card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 22px;
+  display: grid; gap: 18px; min-width: 0;
+}
+.card h2 { font-size: 16px; font-weight: 800; letter-spacing: -.01em; }
+.card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.card-head p { margin: 0; color: var(--ink-3); font-size: 12.5px; }
+.stack { display: grid; gap: 22px; min-width: 0; }
+
+/* Assumptions */
+.assume { position: sticky; top: 16px; }
+.group { display: grid; gap: 14px; }
+.group + .group { border-top: 1px dashed var(--line); padding-top: 18px; }
+.field { display: grid; gap: 6px; }
+.field-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.field label { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.field .hint { font-size: 11.5px; color: var(--ink-3); }
+.numbox {
+  display: flex; align-items: center; border: 1px solid var(--line); border-radius: 9px; background: var(--bg);
+  padding: 0 8px; width: 104px;
+}
+.numbox input {
+  width: 100%; min-width: 0; border: 0; background: transparent; padding: 6px 2px; text-align: right;
+  font-family: var(--font-num); font-size: 13.5px; outline: none;
+}
+.numbox span { color: var(--ink-3); font-size: 12px; font-family: var(--font-num); }
+.numbox:focus-within { border-color: var(--brown); }
+input[type=range] { width: 100%; accent-color: var(--brown); margin: 0; }
+.seg { display: flex; background: var(--sunken); border-radius: 10px; padding: 3px; gap: 3px; }
+.seg button {
+  flex: 1; border: 0; background: transparent; border-radius: 8px; padding: 6px 4px; font-size: 12.5px;
+  font-weight: 600; color: var(--ink-2); cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.wacc-out {
+  display: flex; justify-content: space-between; align-items: center; background: var(--sunken);
+  border-radius: 10px; padding: 10px 14px; font-weight: 700;
+}
+.wacc-out .num { font-size: 18px; color: var(--brown); }
+.reset { border: 0; background: none; color: var(--brown); font-weight: 700; font-size: 13px; cursor: pointer; padding: 0; justify-self: start; }
+.warn { font-size: 12.5px; color: var(--bad); background: var(--bad-bg); border-radius: 9px; padding: 9px 12px; }
+
+/* Chart */
+.chart { width: 100%; height: auto; display: block; overflow: visible; }
+.chart text { font-family: var(--font-num); font-size: 11px; fill: var(--ink-3); }
+.chart .gridline { stroke: var(--line); stroke-width: 1; }
+.chart .zero { stroke: var(--ink-3); stroke-width: 1; }
+.legend { display: flex; gap: 16px; font-size: 12.5px; color: var(--ink-2); flex-wrap: wrap; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+/* Bridge */
+.bridge { display: grid; gap: 0; }
+.bridge-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 9px 0;
+  border-bottom: 1px solid var(--line); font-size: 14px;
+}
+.bridge-row .num { text-align: right; }
+.bridge-row.sub { color: var(--ink-2); }
+.bridge-row.total { font-weight: 800; border-bottom: 0; border-top: 2px solid var(--ink); }
+.bridge-row.total .num { color: var(--brown); }
+.split { height: 8px; border-radius: 99px; overflow: hidden; display: flex; background: var(--sunken); }
+.split div { height: 100%; }
+.split-cap { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-3); gap: 12px; flex-wrap: wrap; }
+
+/* Tables */
+.tbl-wrap { overflow-x: auto; margin: 0 -4px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 8px 10px; text-align: right; white-space: nowrap; }
+th { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
+td { font-family: var(--font-num); font-variant-numeric: tabular-nums; border-top: 1px solid var(--line); }
+td:first-child, th:first-child { text-align: left; font-family: var(--font-ui); font-weight: 600; }
+tr.term td { background: var(--sunken); }
+.sens td { text-align: center; border: 2px solid var(--surface); border-radius: 6px; }
+.sens th { text-align: center; }
+.sens td.axis, .sens th.axis { text-align: left; background: transparent; color: var(--ink-3); font-family: var(--font-num); font-weight: 500; }
+.sens td.cur { outline: 2px solid var(--ink); outline-offset: -2px; font-weight: 700; }
+
+.foot { color: var(--ink-3); font-size: 12.5px; max-width: 75ch; }
+.skeleton { opacity: .5; pointer-events: none; transition: opacity .2s; }
+
+@media (max-width: 920px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .assume { position: static; }
+  .verdict { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 520px) {
+  .big { font-size: 34px; }
+  .co-name { font-size: 22px; }
+  .verdict { padding: 20px; }
+  .card { padding: 18px; }
+  .btn { padding: 10px 16px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="mark" aria-hidden="true">DCF</div>
+      <div><h1>Ledger DCF</h1><small>Intrinsic value from free cash flow</small></div>
+    </div>
+    <button class="theme-btn" id="themeBtn" type="button">Dark mode</button>
+  </header>
+
+  <section class="search">
+    <form id="searchForm" autocomplete="off">
+      <input id="tickerInput" placeholder="Type a ticker or company name: AAPL, Nike, 7203.T…" aria-label="Ticker or company" aria-autocomplete="list" aria-controls="suggestList">
+      <button class="btn" id="goBtn" type="submit">Value it</button>
+    </form>
+    <ul class="suggest" id="suggestList" role="listbox" hidden></ul>
+    <div class="chips"><span class="label">Try</span>
+      <button class="chip" type="button" data-t="AAPL">AAPL</button>
+      <button class="chip" type="button" data-t="MSFT">MSFT</button>
+      <button class="chip" type="button" data-t="GOOGL">GOOGL</button>
+      <button class="chip" type="button" data-t="KO">KO</button>
+      <button class="chip" type="button" data-t="NKE">NKE</button>
+      <button class="chip" type="button" data-t="SHEL.L">SHEL.L</button>
+    </div>
+  </section>
+
+  <div class="status" id="status" hidden></div>
+
+  <main id="app" hidden>
+    <section class="verdict">
+      <div>
+        <div class="co-name" id="coName"></div>
+        <div class="co-meta" id="coMeta"></div>
+        <div class="values">
+          <div><div class="label">Intrinsic value / share</div><div class="big" id="ivOut"></div></div>
+          <div><div class="label">Market price</div><div class="big small" id="pxOut"></div></div>
+          <div><span class="pill" id="pillOut"></span></div>
+        </div>
+      </div>
+      <div class="gauge-box">
+        <div class="gauge" id="gauge"></div>
+        <div class="mos" id="mosOut"></div>
+      </div>
+    </section>
+
+    <div class="grid" style="margin-top:22px">
+      <aside class="card assume" aria-label="Assumptions">
+        <div class="card-head"><h2>Assumptions</h2><button class="reset" id="resetBtn" type="button">Reset</button></div>
+
+        <div class="group">
+          <div class="label">Starting cash flow</div>
+          <div class="seg" role="group" aria-label="Base free cash flow">
+            <button type="button" data-base="latest" aria-pressed="true">Latest year</button>
+            <button type="button" data-base="avg3" aria-pressed="false">3-yr avg</button>
+            <button type="button" data-base="custom" aria-pressed="false">Custom</button>
+          </div>
+          <div class="field">
+            <div class="field-row"><label for="baseFcf">Base FCF</label>
+              <div class="numbox"><input id="baseFcf" inputmode="decimal"><span id="baseUnit">B</span></div></div>
+            <div class="hint" id="baseHint"></div>
+          </div>
+          <div class="warn" id="fcfWarn" hidden></div>
+        </div>
+
+        <div class="group" id="growthGroup"></div>
+        <div class="group" id="waccGroup"></div>
+        <div class="group" id="adrGroup" hidden></div>
+      </aside>
+
+      <div class="stack">
+        <section class="card">
+          <div class="card-head"><h2>Free cash flow, history and forecast</h2><p id="unitNote"></p></div>
+          <div class="legend">
+            <span><i style="background:var(--ink-3)"></i>Reported</span>
+            <span><i style="background:var(--brown)"></i>Forecast</span>
+            <span><i style="background:var(--brown);opacity:.35"></i>Present value</span>
+          </div>
+          <svg class="chart" id="chart" viewBox="0 0 720 260" role="img" aria-label="Free cash flow chart"></svg>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2>From cash flow to share price</h2><p>Enterprise value bridge</p></div>
+          <div class="bridge" id="bridge"></div>
+          <div>
+            <div class="split" id="split"></div>
+            <div class="split-cap" id="splitCap"></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2>Ten-year projection</h2><p id="projNote"></p></div>
+          <div class="tbl-wrap"><table id="projTable"></table></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2>Sensitivity</h2><p>Value per share by discount rate and terminal growth</p></div>
+          <div class="tbl-wrap"><table class="sens" id="sensTable"></table></div>
+        </section>
+
+        <p class="foot">Data comes from Yahoo Finance's public endpoints and is pulled live each time you look up a company. Free cash flow is operating cash flow minus capital expenditure. The model grows FCF at your stage-one rate for five years, fades to terminal growth over years six to ten, then capitalises year ten with the Gordon growth formula. Banks, insurers and companies with large finance arms do not suit an FCF model. This is a calculator, not investment advice.</p>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+
+/* ---------- Theme ---------- */
+(function theme() {
+  const btn = $("#themeBtn");
+  let saved = null;
+  try { saved = localStorage.getItem("dcf-theme"); } catch (e) {}
+  if (saved) document.documentElement.dataset.theme = saved;
+  const isDark = () => document.documentElement.dataset.theme
+    ? document.documentElement.dataset.theme === "dark"
+    : matchMedia("(prefers-color-scheme: dark)").matches;
+  const label = () => { btn.textContent = isDark() ? "Light mode" : "Dark mode"; };
+  label();
+  btn.addEventListener("click", () => {
+    const next = isDark() ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("dcf-theme", next); } catch (e) {}
+    label();
+  });
+})();
+
+/* ---------- State ---------- */
+let co = null;     // company data from the server
+let A = null;      // assumptions
+let baseMode = "latest";
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const pct = (v, d = 1) => (v * 100).toFixed(d) + "%";
+
+function scaleFor(values) {
+  const m = Math.max(...values.map(v => Math.abs(v || 0)));
+  if (m >= 1e13) return { div: 1e12, unit: "T" };
+  if (m >= 1e10) return { div: 1e9, unit: "B" };
+  if (m >= 1e7) return { div: 1e6, unit: "M" };
+  return { div: 1e3, unit: "K" };
+}
+function money(v, ccy, digits = 2) {
+  if (v == null || !isFinite(v)) return "n/a";
+  try { return new Intl.NumberFormat(undefined, { style: "currency", currency: ccy, maximumFractionDigits: digits, minimumFractionDigits: digits }).format(v); }
+  catch (e) { return v.toFixed(digits) + " " + ccy; }
+}
+function big(v, sc) {
+  if (v == null || !isFinite(v)) return "n/a";
+  const x = v / sc.div;
+  return (x < 0 ? "−" : "") + Math.abs(x).toLocaleString(undefined, { maximumFractionDigits: Math.abs(x) >= 100 ? 0 : 1, minimumFractionDigits: Math.abs(x) >= 100 ? 0 : 1 }) + sc.unit;
+}
+
+function cagr(series) {
+  const s = series.filter(x => x.value > 0);
+  if (s.length < 2) return null;
+  const yrs = (new Date(s[s.length - 1].date) - new Date(s[0].date)) / 3.156e10;
+  return yrs > 0.5 ? Math.pow(s[s.length - 1].value / s[0].value, 1 / yrs) - 1 : null;
+}
+
+function baseFromMode(mode) {
+  const f = co.history.fcf.map(x => x.value);
+  if (mode === "avg3") { const l = f.slice(-3); return l.reduce((a, b) => a + b, 0) / l.length; }
+  return f[f.length - 1];
+}
+
+function defaults() {
+  const revG = cagr(co.history.revenue);
+  const g1 = clamp(revG == null ? 0.05 : revG, 0.02, 0.15);
+  const beta = co.beta == null ? 1 : clamp(co.beta, 0.5, 2.5);
+  return {
+    base: baseFromMode("latest"),
+    g1: +g1.toFixed(3),
+    gT: 0.025,
+    rf: co.riskFree ?? 0.043,
+    beta: +beta.toFixed(2),
+    erp: 0.05,
+    kd: co.costOfDebt ?? clamp((co.riskFree ?? 0.043) + 0.015, 0.02, 0.12),
+    tax: co.taxRate ?? 0.21,
+    adr: 1,
+    revG,
+  };
+}
+
+/* ---------- Model ---------- */
+function wacc(a) {
+  const E = co.price * co.shares / (co.fxToPrice || 1) / a.adr; // market cap, in financial currency
+  const D = co.totalDebt || 0;
+  const ke = a.rf + a.beta * a.erp;
+  const kd = a.kd * (1 - a.tax);
+  const wE = E / (E + D || 1);
+  return { r: wE * ke + (1 - wE) * kd, ke, kdAfter: kd, wE, wD: 1 - wE, E };
+}
+
+function run(a, rOverride, gOverride) {
+  const w = wacc(a);
+  const r = rOverride ?? w.r;
+  const gT = gOverride ?? a.gT;
+  const rows = [];
+  let f = a.base;
+  for (let y = 1; y <= 10; y++) {
+    const g = y <= 5 ? a.g1 : a.g1 + (gT - a.g1) * (y - 5) / 5;
+    f = f * (1 + g);
+    const df = 1 / Math.pow(1 + r, y);
+    rows.push({ y, g, fcf: f, df, pv: f * df });
+  }
+  const pvSum = rows.reduce((s, x) => s + x.pv, 0);
+  const tv = r > gT ? rows[9].fcf * (1 + gT) / (r - gT) : NaN;
+  const pvTv = tv * rows[9].df;
+  const ev = pvSum + pvTv;
+  const equity = ev + (co.cash || 0) - (co.totalDebt || 0) - (co.minorityInterest || 0);
+  const perShare = equity / co.shares * (co.fxToPrice || 1) * a.adr;
+  return { w, r, gT, rows, pvSum, tv, pvTv, ev, equity, perShare };
+}
+
+/* ---------- Controls ---------- */
+function slider(id, label, hint, min, max, step, unit = "%") {
+  const scale = unit === "%" ? 100 : 1;
+  const v = A[id] * scale;
+  return `<div class="field">
+    <div class="field-row"><label for="in-${id}">${label}</label>
+      <div class="numbox"><input id="in-${id}" data-k="${id}" data-scale="${scale}" inputmode="decimal" value="${+v.toFixed(2)}"><span>${unit === "%" ? "%" : "×"}</span></div></div>
+    <input type="range" id="rg-${id}" data-k="${id}" data-scale="${scale}" aria-label="${label}" min="${min}" max="${max}" step="${step}" value="${v}">
+    ${hint ? `<div class="hint">${hint}</div>` : ""}
+  </div>`;
+}
+
+function buildControls() {
+  const revTxt = A.revG == null ? "Not enough revenue history." : `Revenue grew ${pct(A.revG)} a year recently.`;
+  $("#growthGroup").innerHTML = `<div class="label">Growth</div>
+    ${slider("g1", "FCF growth, years 1–5", revTxt, -10, 30, 0.5)}
+    ${slider("gT", "Terminal growth", "Long-run rate after year 10. Keep near inflation.", 0, 5, 0.1)}`;
+  $("#waccGroup").innerHTML = `<div class="label">Discount rate (WACC)</div>
+    ${slider("rf", "Risk-free rate", "Live US 10-year Treasury yield.", 0, 10, 0.05)}
+    ${slider("beta", "Beta", co.beta == null ? "Could not calculate; defaulted to 1.0." : `5-yr monthly vs ${co.benchmark}: ${co.beta.toFixed(2)}.`, 0, 3, 0.05, "x")}
+    ${slider("erp", "Equity risk premium", "", 2, 10, 0.1)}
+    ${slider("kd", "Pre-tax cost of debt", co.costOfDebt ? "Interest expense ÷ total debt." : "Estimated: risk-free + 1.5%.", 0, 15, 0.1)}
+    ${slider("tax", "Tax rate", "Average effective rate, last 3 years.", 0, 40, 0.5)}
+    <div class="wacc-out"><span>WACC</span><span class="num" id="waccOut"></span></div>
+    <div class="hint" id="waccHint"></div>`;
+  const adr = co.financialCurrency !== co.priceCurrency;
+  $("#adrGroup").hidden = !adr;
+  if (adr) {
+    $("#adrGroup").innerHTML = `<div class="label">Listing</div>
+      <div class="field"><div class="field-row"><label for="in-adr">Shares per listed unit</label>
+      <div class="numbox"><input id="in-adr" data-k="adr" data-scale="1" inputmode="decimal" value="${A.adr}"><span>×</span></div></div>
+      <div class="hint">Reports in ${co.financialCurrency}, trades in ${co.priceCurrency}. If this is an ADR, enter how many ordinary shares one ADR represents (TSM is 5).</div></div>`;
+  }
+  $$("#growthGroup input, #waccGroup input, #adrGroup input").forEach(el => {
+    el.addEventListener("input", () => {
+      const k = el.dataset.k, sc = +el.dataset.scale;
+      const v = parseFloat(el.value);
+      if (!isFinite(v)) return;
+      A[k] = v / sc;
+      const twin = el.type === "range" ? $("#in-" + k) : $("#rg-" + k);
+      if (twin) twin.value = el.type === "range" ? +v.toFixed(2) : v;
+      render();
+    });
+  });
+  syncBase();
+}
+
+function syncBase() {
+  const sc = scaleFor(co.history.fcf.map(x => x.value).concat([A.base]));
+  $("#baseUnit").textContent = sc.unit;
+  $("#baseFcf").value = +(A.base / sc.div).toFixed(2);
+  $("#baseFcf").dataset.div = sc.div;
+  $$(".seg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.base === baseMode));
+  const last = co.history.fcf[co.history.fcf.length - 1];
+  $("#baseHint").textContent = `In ${co.financialCurrency}. Last reported: ${big(last.value, sc)} (FY ${last.date.slice(0, 4)}).`;
+}
+
+$$(".seg button").forEach(b => b.addEventListener("click", () => {
+  baseMode = b.dataset.base;
+  if (baseMode !== "custom") A.base = baseFromMode(baseMode);
+  syncBase();
+  if (baseMode === "custom") $("#baseFcf").focus();
+  render();
+}));
+$("#baseFcf").addEventListener("input", e => {
+  const v = parseFloat(e.target.value);
+  if (!isFinite(v)) return;
+  A.base = v * +e.target.dataset.div;
+  baseMode = "custom";
+  $$(".seg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.base === "custom"));
+  render();
+});
+$("#resetBtn").addEventListener("click", () => { A = defaults(); baseMode = "latest"; buildControls(); render(); });
+
+/* ---------- Render ---------- */
+function render() {
+  const m = run(A);
+  const ccy = co.priceCurrency;
+  const iv = m.perShare;
+  const up = iv / co.price - 1;
+
+  $("#waccOut").textContent = pct(m.r, 2);
+  $("#waccHint").textContent = `Cost of equity ${pct(m.w.ke)} × ${pct(m.w.wE, 0)} equity + after-tax debt ${pct(m.w.kdAfter)} × ${pct(m.w.wD, 0)} debt.`;
+
+  const bad = !isFinite(iv) || m.r <= m.gT;
+  $("#fcfWarn").hidden = !(A.base <= 0 || m.r <= m.gT);
+  $("#fcfWarn").textContent = m.r <= m.gT
+    ? "Terminal growth must be below the discount rate."
+    : "Base free cash flow is negative, so the model returns a negative value. Try the 3-year average or a custom figure.";
+
+  $("#ivOut").textContent = bad ? "n/a" : money(iv, ccy);
+  $("#pxOut").textContent = money(co.price, ccy);
+  const pill = $("#pillOut");
+  if (bad || iv <= 0) { pill.className = "pill bad"; pill.textContent = "No positive value"; }
+  else if (up > 0.15) { pill.className = "pill good"; pill.textContent = "Undervalued"; }
+  else if (up < -0.15) { pill.className = "pill bad"; pill.textContent = "Overvalued"; }
+  else { pill.className = "pill mid"; pill.textContent = "Fairly valued"; }
+
+  // Gauge
+  const g = $("#gauge");
+  if (!bad && iv > 0) {
+    const hi = Math.max(iv, co.price) * 1.25;
+    const xP = co.price / hi * 100, xI = iv / hi * 100;
+    const lo = Math.min(xP, xI), w = Math.abs(xP - xI);
+    g.innerHTML = `<div class="track"></div>
+      <div class="fill" style="left:${lo}%;width:${w}%;background:${up >= 0 ? "var(--good)" : "var(--bad)"};opacity:.55"></div>
+      <div class="tick price" style="left:${xP}%"><span>Price</span></div>
+      <div class="tick iv" style="left:${xI}%"><span>Value</span></div>`;
+    $("#mosOut").innerHTML = up >= 0
+      ? `The model puts value <strong>${pct(up)} above</strong> the current price, a margin of safety of <strong>${pct(1 - co.price / iv)}</strong>.`
+      : `The current price is <strong>${pct(co.price / iv - 1)} above</strong> the model's value. The market is pricing in more growth than you assumed.`;
+  } else {
+    g.innerHTML = `<div class="track"></div>`;
+    $("#mosOut").textContent = "Adjust the assumptions to get a positive valuation.";
+  }
+
+  renderChart(m);
+  renderBridge(m);
+  renderTable(m);
+  renderSens(m);
+}
+
+function renderChart(m) {
+  const hist = co.history.fcf;
+  const all = hist.map(x => x.value).concat(m.rows.map(x => x.fcf));
+  const sc = scaleFor(all);
+  $("#unitNote").textContent = `${co.financialCurrency}, ${sc.unit === "B" ? "billions" : sc.unit === "T" ? "trillions" : sc.unit === "M" ? "millions" : "thousands"}`;
+  const W = 720, H = 260, L = 52, R = 8, T = 14, B = 30;
+  const max = Math.max(0, ...all), min = Math.min(0, ...all);
+  const nice = (v) => { if (v === 0) return 0; const p = Math.pow(10, Math.floor(Math.log10(Math.abs(v)))); return Math.ceil(Math.abs(v) / p * 2) / 2 * p * Math.sign(v); };
+  const yMax = nice(max) || 1, yMin = min < 0 ? -nice(-min) : 0;
+  const y = v => T + (yMax - v) / (yMax - yMin) * (H - T - B);
+  const n = hist.length + 10, slot = (W - L - R) / n, bw = Math.min(30, slot * 0.62);
+  let s = "";
+  for (let i = 0; i <= 4; i++) {
+    const v = yMin + (yMax - yMin) * i / 4;
+    s += `<line class="gridline" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/>`;
+    s += `<text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${big(v, sc)}</text>`;
+  }
+  s += `<line class="zero" x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}"/>`;
+  const bar = (i, v, fill, op = 1) => {
+    const x = L + slot * i + (slot - bw) / 2;
+    const top = Math.min(y(v), y(0)), h = Math.max(1, Math.abs(y(v) - y(0)));
+    return `<rect x="${x}" y="${top}" width="${bw}" height="${h}" rx="3" fill="${fill}" opacity="${op}"><title>${big(v, sc)}</title></rect>`;
+  };
+  hist.forEach((d, i) => {
+    s += bar(i, d.value, "var(--ink-3)");
+    s += `<text x="${L + slot * i + slot / 2}" y="${H - 10}" text-anchor="middle">${d.date.slice(2, 4)}</text>`;
+  });
+  const fy = +hist[hist.length - 1].date.slice(0, 4);
+  const sepX = L + slot * hist.length;
+  s += `<line x1="${sepX}" x2="${sepX}" y1="${T}" y2="${H - B}" stroke="var(--line)" stroke-dasharray="3 4"/>`;
+  m.rows.forEach((r, j) => {
+    const i = hist.length + j;
+    s += bar(i, r.fcf, "var(--brown)");
+    const x = L + slot * i + (slot - bw) / 2 + bw * 0.2;
+    const top = Math.min(y(r.pv), y(0)), h = Math.max(1, Math.abs(y(r.pv) - y(0)));
+    s += `<rect x="${x}" y="${top}" width="${bw * 0.6}" height="${h}" rx="2" fill="var(--surface)" opacity=".55"><title>PV ${big(r.pv, sc)}</title></rect>`;
+    s += `<text x="${L + slot * i + slot / 2}" y="${H - 10}" text-anchor="middle">${String(fy + r.y).slice(2)}</text>`;
+  });
+  $("#chart").innerHTML = s;
+}
+
+function renderBridge(m) {
+  const sc = scaleFor([m.ev, m.equity, co.totalDebt, co.cash]);
+  const fc = co.financialCurrency;
+  const rows = [
+    ["PV of 10-year cash flows", m.pvSum, "sub"],
+    ["PV of terminal value", m.pvTv, "sub"],
+    ["Enterprise value", m.ev, ""],
+    ["+ Cash and short-term investments", co.cash, "sub"],
+    ["− Total debt", -co.totalDebt, "sub"],
+  ];
+  if (co.minorityInterest) rows.push(["− Minority interest", -co.minorityInterest, "sub"]);
+  rows.push(["Equity value", m.equity, ""]);
+  rows.push([`÷ Shares outstanding`, null, "sub", (co.shares / 1e6).toLocaleString(undefined, { maximumFractionDigits: 0 }) + "M"]);
+  let html = rows.map(([k, v, c, txt]) => `<div class="bridge-row ${c}"><span>${k}</span><span class="num">${txt ?? big(v, sc) + " " + fc}</span></div>`).join("");
+  html += `<div class="bridge-row total"><span>Value per share</span><span class="num">${money(m.perShare, co.priceCurrency)}</span></div>`;
+  $("#bridge").innerHTML = html;
+  const tot = Math.max(m.pvSum, 0) + Math.max(m.pvTv, 0);
+  const a = tot ? Math.max(m.pvSum, 0) / tot : 0;
+  $("#split").innerHTML = `<div style="width:${a * 100}%;background:var(--brown)"></div><div style="width:${(1 - a) * 100}%;background:var(--ink-3)"></div>`;
+  $("#splitCap").innerHTML = `<span>Forecast years ${pct(a, 0)}</span><span>Terminal value ${pct(1 - a, 0)} of enterprise value</span>`;
+}
+
+function renderTable(m) {
+  const sc = scaleFor(m.rows.map(r => r.fcf).concat([m.tv]));
+  const fy = +co.history.fcf[co.history.fcf.length - 1].date.slice(0, 4);
+  $("#projNote").textContent = `${co.financialCurrency}, ${sc.unit}`;
+  let h = `<thead><tr><th>Year</th><th>Growth</th><th>FCF</th><th>Discount factor</th><th>Present value</th></tr></thead><tbody>`;
+  m.rows.forEach(r => {
+    h += `<tr><td>${fy + r.y}</td><td>${pct(r.g)}</td><td>${big(r.fcf, sc)}</td><td>${r.df.toFixed(3)}</td><td>${big(r.pv, sc)}</td></tr>`;
+  });
+  h += `<tr class="term"><td>Terminal</td><td>${pct(m.gT)}</td><td>${big(m.tv, sc)}</td><td>${m.rows[9].df.toFixed(3)}</td><td>${big(m.pvTv, sc)}</td></tr></tbody>`;
+  $("#projTable").innerHTML = h;
+}
+
+function renderSens(m) {
+  const rs = [-0.02, -0.01, 0, 0.01, 0.02].map(d => m.r + d);
+  const gs = [-0.01, -0.005, 0, 0.005, 0.01].map(d => m.gT + d);
+  let h = `<thead><tr><th class="axis">WACC ↓ / g →</th>${gs.map(g => `<th>${pct(g)}</th>`).join("")}</tr></thead><tbody>`;
+  rs.forEach((r, i) => {
+    h += `<tr><td class="axis">${pct(r)}</td>`;
+    gs.forEach((g, j) => {
+      const v = r > g ? run(A, r, g).perShare : NaN;
+      const up = v / co.price - 1;
+      const t = isFinite(up) ? clamp(Math.abs(up) / 0.6, 0.08, 1) : 0;
+      const col = !isFinite(v) ? "transparent" : up >= 0 ? `color-mix(in srgb, var(--good) ${t * 45}%, var(--surface))` : `color-mix(in srgb, var(--bad) ${t * 45}%, var(--surface))`;
+      h += `<td class="${i === 2 && j === 2 ? "cur" : ""}" style="background:${col}">${isFinite(v) ? money(v, co.priceCurrency, v >= 1000 ? 0 : 2) : "–"}</td>`;
+    });
+    h += `</tr>`;
+  });
+  $("#sensTable").innerHTML = h + "</tbody>";
+}
+
+/* ---------- Loading ---------- */
+function setStatus(msg, info) {
+  const s = $("#status");
+  s.hidden = !msg; s.textContent = msg || ""; s.className = "status" + (info ? " info" : "");
+}
+
+async function load(ticker) {
+  ticker = ticker.trim().toUpperCase();
+  if (!ticker) return;
+  hideSuggest();
+  $("#tickerInput").value = ticker;
+  $("#goBtn").disabled = true; $("#goBtn").textContent = "Loading…";
+  $("#app").classList.add("skeleton");
+  if ($("#app").hidden) setStatus(`Pulling statements for ${ticker}…`, true);
+  try {
+    const res = await fetch("/api/company?ticker=" + encodeURIComponent(ticker));
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Lookup failed.");
+    if (!data.shares || !data.price || !data.history.fcf.length) throw new Error(`${ticker} is missing share count, price or cash flow data, so it can't be valued.`);
+    co = data; A = defaults(); baseMode = "latest";
+    $("#coName").textContent = co.name;
+    $("#coMeta").innerHTML = `<span class="num">${co.symbol}</span><span>${co.exchange || ""}</span><span>Financials in ${co.financialCurrency}</span><span>Beta vs ${co.benchmark}</span>`;
+    buildControls(); render();
+    setStatus(""); $("#app").hidden = false;
+    try { localStorage.setItem("dcf-last", ticker); } catch (e) {}
+  } catch (e) {
+    const msg = e instanceof TypeError
+      ? "Can't reach the data server. Start it with: python server.py, then open http://localhost:8765."
+      : e.message;
+    setStatus(msg);
+  } finally {
+    $("#goBtn").disabled = false; $("#goBtn").textContent = "Value it";
+    $("#app").classList.remove("skeleton");
+  }
+}
+
+/* ---------- Search + suggestions ---------- */
+const input = $("#tickerInput"), list = $("#suggestList");
+let sugg = [], sel = -1, timer = null, reqId = 0;
+function hideSuggest() { list.hidden = true; sugg = []; sel = -1; }
+function drawSuggest() {
+  list.innerHTML = sugg.map((s, i) => `<li role="option" data-i="${i}" aria-selected="${i === sel}"><span class="sym">${s.symbol}</span><span class="nm"></span><span class="ex">${s.exchange}</span></li>`).join("");
+  $$("li", list).forEach((li, i) => { $(".nm", li).textContent = sugg[i].name; });
+  list.hidden = !sugg.length;
+}
+input.addEventListener("input", () => {
+  clearTimeout(timer);
+  const q = input.value.trim();
+  if (q.length < 2) return hideSuggest();
+  timer = setTimeout(async () => {
+    const id = ++reqId;
+    try {
+      const r = await fetch("/api/search?q=" + encodeURIComponent(q));
+      const d = await r.json();
+      if (id !== reqId || !Array.isArray(d)) return;
+      sugg = d; sel = -1; drawSuggest();
+    } catch (e) {}
+  }, 220);
+});
+input.addEventListener("keydown", e => {
+  if (list.hidden) return;
+  if (e.key === "ArrowDown") { sel = Math.min(sugg.length - 1, sel + 1); drawSuggest(); e.preventDefault(); }
+  if (e.key === "ArrowUp") { sel = Math.max(-1, sel - 1); drawSuggest(); e.preventDefault(); }
+  if (e.key === "Escape") hideSuggest();
+});
+list.addEventListener("mousedown", e => {
+  const li = e.target.closest("li"); if (!li) return;
+  e.preventDefault(); load(sugg[+li.dataset.i].symbol);
+});
+input.addEventListener("blur", () => setTimeout(hideSuggest, 120));
+$("#searchForm").addEventListener("submit", e => {
+  e.preventDefault();
+  load(sel >= 0 && sugg[sel] ? sugg[sel].symbol : input.value);
+});
+$$(".chip").forEach(c => c.addEventListener("click", () => load(c.dataset.t)));
+
+let first = "AAPL";
+try { first = localStorage.getItem("dcf-last") || "AAPL"; } catch (e) {}
+load(first);
+</script>
+</body>
+</html>
