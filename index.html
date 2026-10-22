@@ -697,7 +697,7 @@ function renderSens(m) {
 /* ---------- Data (Yahoo Finance, through a CORS relay) ---------- */
 // Yahoo Finance doesn't allow direct browser requests, so every call goes through a relay:
 // server.py's /proxy when running locally, a Cloudflare Worker (worker.js) when hosted.
-const RELAY_URL = "https://ledger-dcf-relay.YOUR-SUBDOMAIN.workers.dev";
+const RELAY_URL = "https://ledger-dcf-relay.dcfledger.workers.dev";
 const LOCAL = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
 const RELAY = LOCAL ? "/proxy" : RELAY_URL;
 const YF = "https://query1.finance.yahoo.com";
